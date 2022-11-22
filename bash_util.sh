@@ -23,16 +23,20 @@ CYAN='\e[36m'
 WHITE='\e[37m'
 
 func ClearLine() {
+    # 只能用于交互式 shell, 不能用于脚本
+
     perl -e '$len=`tput cols`-1;$space=" "x"$len";print "\r$space\r"' >&2
 }
 
 func WarnMsg() {
+    # print msg to stderr
+    local msg="$*"
+
     local enter=true
     if [ "${1}" == "-n" ]; then
         enter="false"
         shift
     fi
-    msg="$*"
     echo -ne "${YELLOW}"
     echo -n "${msg}" >&2
     echo -ne "${CLEARCOLOR}"
@@ -41,61 +45,83 @@ func WarnMsg() {
     fi
 }
 
-func CheckArgCount() {
-    count=$1
-    shift
-    args=$*
-    argCount=$#
-    if [ "${count}" != "${argCount}" ]; then
-        WarnMsg "arg count is not equal ${count}"
-    fi
-}
-
 func DebugLog() {
-    msg="$*"
+    local msg="$*"
+
     echo -ne "${GREEN}"
     echo "[$(date +%F\ %T) Debug:${BASH_LINENO}]: ${msg}"
     echo -ne "${CLEARCOLOR}"
 }
 
 func WarnLog() {
-    msg="$*"
+    local msg="$*"
+
     echo -ne "${YELLOW}"
     echo "[$(date +%F\ %T) Warn:${BASH_LINENO}]: ${msg}"
     echo -ne "${CLEARCOLOR}"
 }
 
 func InfoLog() {
-    msg="$*"
+    local msg="$*"
+
     echo -ne "${CYAN}"
     echo "[$(date +%F\ %T) Info:${BASH_LINENO}]: ${msg}"
     echo -ne "${CLEARCOLOR}"
 }
 
 func ErrorLog() {
-    msg="$*"
+    local msg="$*"
+
     echo -ne "${RED}"
     echo "[$(date +%F\ %T) Error:${BASH_LINENO}]: ${msg}"
     echo -ne "${CLEARCOLOR}"
 }
 
 func CriticaLog() {
-    msg="$*"
+    local msg="$*"
+
     echo -ne "${MAGENTA}"
     echo "[$(date +%F\ %T) Critical:${BASH_LINENO}]: ${msg}"
     echo -ne "${CLEARCOLOR}"
 }
 
 func Exit() {
-    code=$1
-    shift
-    msg="$*"
-    if [ ${#msg} == 0 ]; then
-        echo "Exit: ${code}"
+    local code=$1; shift
+    local msg="$*";
+
+    if [ "${#msg}" == "0" ]; then
+        WarnMsg "Exit: ${code}"
     else
-        echo "Exit: ${msg}"
+        WarnMsg "Exit: ${msg}"
     fi
     exit ${code:-0}
+}
+
+func Assert() {
+    local lastRetCode=$?
+    local errMsg="$1"
+    local isExit="$2"
+
+    if [ "${lastRetCode}" != "0" ]; then
+        if [ "${isExit}" == "1" ]; then
+            WarnMsg "${errMsg}"
+            Exit 1 "last return code: ${lastRetCode}"
+        else 
+            WarnMsg "${errMsg}"
+            WarnMsg "last return code: ${lastRetCode}"
+        fi 
+    fi
+}
+
+func CheckArgsCount() {
+    local count=$1; shift
+    local args=$*
+    local argCount=$#
+
+    if [ "${count}" != "${argCount}" ]; then
+        WarnMsg "error: arg count is not equal ${count}" 
+        exit
+    fi 
 }
 
 func PausePoint() {
@@ -106,21 +132,28 @@ func PausePoint() {
     set -x
 }
 
+func GetCmdDir() {
+    local CmdDir=$(cd $(dirname $0); pwd)
+    echo "${CmdDir}"
+}
+
 func GetOS() {
     awk -F'=' '/PRETTY_NAME=/ {gsub(/"/, "");print $2}' /etc/os-release
 }
 
 func GetIPv4() {
-    device=$1
+    local device=$1
+
     if [ -n "${device}" ]; then
         ip a s ${device} | perl -lne 'print $1 if /inet ((?:\d+\.){3}\d+)/'
     else
-        ip a s ${device} | perl -lne 'print $1 if /inet ((?:\d+\.){3}\d+)/' | grep -v '127.0.0.1' | head -1
+        ip a | perl -lne 'print $1 if /inet ((?:\d+\.){3}\d+)/' | grep -v '127.0.0.1' | head -1
     fi
 }
 
 func GetIPv6() {
-    device=$1
+    local device=$1
+
     if [ -n "${device}" ]; then
         ip a s ${device} | perl -lne 'print $1 if /inet6 (.*)\/\d+/'
     else
@@ -189,51 +222,53 @@ func Less() {
 }
 
 func Sum() {
-    CheckArgCount 2 $*
+    CheckArgsCount 2 $*
     echo $* | awk '{print $1 + $2}'
 }
 
 func Sub() {
-    CheckArgCount 2 $*
+    CheckArgsCount 2 $*
     echo $* | awk '{print $1 - $2}'
 }
 
 func Mult() {
-    CheckArgCount 2 $*
+    CheckArgsCount 2 $*
     echo $* | awk '{print $1 * $2}'
 }
 
 func Div() {
-    CheckArgCount 2 $*
+    CheckArgsCount 2 $*
     echo $* | awk '{print $1 / $2}'
 }
 
 func Pow() {
-    CheckArgCount 2 $*
+    CheckArgsCount 2 $*
     echo $* | awk '{print $1 ^ $2}'
 }
 
 func Mod() {
-    CheckArgCount 2 $*
+    CheckArgsCount 2 $*
     echo $* | awk '{print $1 % $2}'
 }
 
 func Ceil() {
-    CheckArgCount 1 $*
+    CheckArgsCount 1 $*
     echo $1 | awk '{printf "%.f", $1}'
 }
 
 func Floor() {
-    CheckArgCount 1 $* 
+    CheckArgsCount 1 $* 
     echo ${1%.*}
 }
 
 func Random() {
-    digit=$1
+    local digit=$1
+
     if [ -z "${digit}" ]; then 
-        Random $(Random 1) 
+        # 没有长度参数的时候, 随机输出长度 9 以内随机数
+        Random $(Random 1)
     else 
-        num=$(echo "${digit}" | perl -ne 'print if /^\d+$/')
+        local num=$(echo "${digit}" | perl -ne 'print if /^\d+$/')
         if [ -z "$num" ]; then
             WarnMsg "syntax error"
             return 
@@ -243,8 +278,9 @@ func Random() {
 }
 
 func CheckPIDAlived() {
-    pid=$1
-    CheckArgCount 1 $*
+    local pid=$1
+
+    CheckArgsCount 1 $*
     kill -0 ${pid} > /dev/null 2>&1 
     if [ "$?" == "0" ]; then
         echo true
@@ -254,48 +290,54 @@ func CheckPIDAlived() {
 }
 
 func GetCpuIdle() {
-    time=$1
-    statBefore=$(awk '/cpu\s/ {$1="";print}' /proc/stat)
+    local time=$1
+
+    local statBefore=$(awk '/cpu\s/ {$1="";print}' /proc/stat)
     WarnMsg -n "wait ${time:-1}s..." >&2
     sleep ${time:-1}
-    statAfter=$(awk '/cpu\s/ {$1="";print}' /proc/stat)
+    local statAfter=$(awk '/cpu\s/ {$1="";print}' /proc/stat)
     ClearLine
-    idleBefore=$(echo ${statBefore} | awk '{print $4}')
-    idleAfter=$(echo ${statAfter} | awk '{print $4}')
-    totalBefore=$(echo ${statBefore} | perl -lne '@line=split;foreach(@line){$total+=$_};print $total')
-    totalAfter=$(echo ${statAfter} | perl -lne '@line=split;foreach(@line){$total+=$_};print $total')
-    idle=$(Sub ${idleAfter} ${idleBefore})
-    total=$(Sub ${totalAfter} ${totalBefore})
+    local idleBefore=$(echo ${statBefore} | awk '{print $4}')
+    local idleAfter=$(echo ${statAfter} | awk '{print $4}')
+    local totalBefore=$(echo ${statBefore} | perl -lne '@line=split;foreach(@line){$total+=$_};print $total')
+    local totalAfter=$(echo ${statAfter} | perl -lne '@line=split;foreach(@line){$total+=$_};print $total')
+    local idle=$(Sub ${idleAfter} ${idleBefore})
+    local total=$(Sub ${totalAfter} ${totalBefore})
     Div ${idle} ${total}
 }
 
 func GetCpuUsage() {
-    time=$1
-    idle=$(GetCpuIdle ${time})
+    local time=$1
+
+    local idle=$(GetCpuIdle ${time})
     Sub 1 ${idle}
 }
 
 func GetMemAvailable() {
-    availableMem=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
-    totalMem=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    local availableMem=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+    local totalMem=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
     Div ${availableMem} ${totalMem}
 }
 
 func GetMemUsage() {
-    availableMemPer=$(GetMemAvailable)
+    local availableMemPer=$(GetMemAvailable)
     Sub 1 ${availableMemPer}
 }
 
 func GetDiskUsage() {
-    mountPoint=$1
-    CheckArgCount 1 $*
+    local mountPoint=$1
+
+    CheckArgsCount 1 $*
     df -h | grep -w ${mountPoint} | awk '{sub("%", "");print $5/100}'
 }
 
 func ParseIni() {
-    section=$1
-    key=$2
-    file=$3
+    # 解析 .ini 文件
+    # Usage: ParseIni <章节名> <key> <文件名>
+    local section=$1
+    local key=$2
+    local file=$3
+
     sed -n '/^\['${section}'\]/,/^\[.*\]/ p' ${file} | awk '/'${key}'/ { print $2 }'
 }
 
@@ -303,18 +345,15 @@ func ParseIni() {
 shopt -u expand_aliases
 
 if [ "$0" == "${BASH_SOURCE[0]}" ]; then
-    WarnMsg "source ./bash_lib_functions.sh to use this script"
+    WarnMsg "source $0 to use this script"
 fi
+
 
 # TODO: Test
 if [ "$1" == "test" ]; then
     Greather 4 3 2
-    if [ $? != 0 ]; then
-        Exit 1 "test Greather fail, exit"
-    fi
+    Assert "test Greather fail, exit" 1
     Less 2 3 5
-    if [ $? != 0 ]; then
-        Exit 1 "test Less fail, exit"
-    fi
+    Assert "test Less fail, exit"
     Exit 0
 fi
